@@ -1,3 +1,5 @@
+//Dieses Skript fügt die verarbeitet die Daten aus weather.json und sortiert sie in die DB ein
+
 const mariadb = require('mariadb');
 const moment = require('moment-timezone');
 const fs = require('fs');
@@ -8,9 +10,9 @@ const weatherData = JSON.parse(rawData);
 
 // Database connection configuration
 const pool = mariadb.createPool({
-  host: 'your_database_host',
-  user: 'your_database_user',
-  password: 'your_database_password',
+  host: 'localhost',
+  user: 'querry',
+  password: 'querry_pw',
   database: 'weather',
   connectionLimit: 5,
 });
