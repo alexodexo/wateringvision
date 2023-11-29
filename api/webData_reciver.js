@@ -2,8 +2,8 @@ const express = require('express');
 const mariadb = require('mariadb');
 const bodyParser = require('body-parser');
 const cors = require('cors');
-
 const app = express();
+
 const port = 3001; // Wähle einen geeigneten Port
 
 // Middleware für das Parsen des Request-Bodies
