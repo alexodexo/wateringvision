@@ -7,7 +7,7 @@ const app = express();
 const port = 3001; // Wähle einen geeigneten Port
 
 // Middleware für das Parsen des Request-Bodies
-app.use(bodyParser.json());sudo 
+app.use(bodyParser.json());
 
 // CORS-Middleware hinzufügen
 app.use(cors());
