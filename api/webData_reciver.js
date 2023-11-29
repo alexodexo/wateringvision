@@ -1,12 +1,16 @@
 const express = require('express');
 const mariadb = require('mariadb');
 const bodyParser = require('body-parser');
+const cors = require('cors');
 
 const app = express();
 const port = 3001; // Wähle einen geeigneten Port
 
 // Middleware für das Parsen des Request-Bodies
-app.use(bodyParser.json());
+app.use(bodyParser.json());sudo 
+
+// CORS-Middleware hinzufügen
+app.use(cors());
 
 // API-Endpoint zum Empfangen von Daten von der Website
 app.post('/api/storeDuration', async (req, res) => {
@@ -45,8 +49,3 @@ app.listen(port, () => {
 });
 
 
-
-/**
-GPT Command:
-Ich brauche ein JAvascript vollständig von dir. Es soll einen API-Endpoint zum Empfangen von Daten von meiner Website haben. Diesen Empfangenen Wert soll es in der Datenbank (MariaDB) "weather" in der Tabelle "webData" in der Spalte "duration" abspeichern. 
-DB Settings & Port abgeändert
