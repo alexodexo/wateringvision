@@ -103,9 +103,9 @@ void callback(char* topic, byte* message, unsigned int length) {
   Serial.println(msg);
 
 
-  if (strcmp(topic, "/berlin/controlValve") == 0) {
+  if (strcmp(topic, "/operateValve/berlin") == 0) {
     handleControlValve(msg);
-  } else if (strcmp(topic, "/berlin/callSensor") == 0) {
+  } else if (strcmp(topic, "/requestSensor/berlin") == 0) {
     handleCallSensor();
   } else {
     Serial.print("Unbekanntes Topic: ");
@@ -120,7 +120,7 @@ void handleCallSensor() {
   createSensorDataString(distance, electricValue, capacitiveValue, temperature, pressure, humidity, sensorDataString, sizeof(sensorDataString));
 
   // Veröffentliche die Nachricht auf "berlin/setSensor"
-  if (client.publish("/berlin/deliverSensor", sensorDataString)) {
+  if (client.publish("/responseSensor/berlin", sensorDataString)) {
     Serial.println("Sensorwert erfolgreich veröffentlicht!");
   } else {
     Serial.println("Fehler beim Veröffentlichen des Sensorwerts.");
@@ -143,7 +143,7 @@ void handleControlValve(String message) {
   } else {
     // Der Wert liegt außerhalb des zulässigen Bereichs oder die Konvertierung war nicht erfolgreich
     Serial.println("Empfangener Wert ist ungültig.");
-    client.publish("berlin/valveFeedback", "Ungültige Dauer");
+    client.publish("/feedback/berlin", "Ungültige Dauer");
   }
 }
 
@@ -173,8 +173,8 @@ void reconnect() {
       lcd.setCursor(0, 1);
       lcd.print("   connected    ");
       Serial.println("Connected to MQTT broker");
-      client.subscribe("/berlin/callSensor");    // Subscribe to a topic
-      client.subscribe("/berlin/controlValve");  // Subscribe to a topic
+      client.subscribe("/operateValve/berlin");    
+      client.subscribe("/requestSensor/berlin"); 
     } else {
       Serial.print("Failed, rc=");
       int clientState = client.state();
