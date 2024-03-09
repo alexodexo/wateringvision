@@ -12,16 +12,12 @@ PubSubClient client(espClient);
 #include <LiquidCrystal_I2C.h>
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-#define echoPin 17
-#define trigPin 16
-long duration;  //of sound wave travel
-int distance;   //for the distance measurement
-
 #define capacitivePin 35
 int capacitiveValue;
 
 #define electricPin 34
 int electricValue;
+int elecPercent;
 
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
@@ -32,12 +28,6 @@ int temperature;
 int pressure;
 int humidity;
 
-#include <ArduinoJson.h>
-#include <Arduino.h>
-#define relaisPin 27
-unsigned long startZeit = 0;  // Speichert den Startzeitpunkt der Verzögerung
-int verzogerungsDauer = 0;    // Speichert die Dauer der Verzögerung in Sekunden
-bool timerAktiv = false;      // Flag, um zu überprüfen, ob der Timer läuft
 
 unsigned long previousMillis = 0; //Sensordisplay Startwert
 
@@ -53,11 +43,7 @@ void setup() {
   delay(1000);
 
   setup_wifi();
-  pinMode(trigPin, OUTPUT);
-
-  pinMode(relaisPin, OUTPUT);
-  digitalWrite(relaisPin, HIGH);
-
+ 
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
 
@@ -114,7 +100,7 @@ void handleCallSensor() {
   messure();
 
   char sensorDataString[60];
-  createSensorDataString(distance, electricValue, capacitiveValue, temperature, pressure, humidity, sensorDataString, sizeof(sensorDataString));
+  createSensorDataString(0, elecPercent, capacitiveValue, temperature, pressure, humidity, sensorDataString, sizeof(sensorDataString));
   Serial.println(sensorDataString);
 
   // Veröffentliche die Nachricht auf "berlin/setSensor"
@@ -132,7 +118,6 @@ void handleCallSensor() {
 
 void messure() {
   bmeMesure();
-  ultrasonicMessure();
   electricMessure();
   capacitiveMesure();
 }
@@ -211,27 +196,9 @@ void bmeMesure() {
   Serial.println(" %");
 }
 
-long ultrasonicMessure() {
-  // Clears the trigPin condition
-  digitalWrite(trigPin, LOW);  //
-  delayMicroseconds(2);
-  // Sets the trigPin HIGH (ACTIVE) for 10 microseconds
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-  // Reads the echoPin, returns the sound wave travel time in microseconds
-  duration = pulseIn(echoPin, HIGH);
-  // Calculating the distance
-  distance = duration * 0.034 / 2;  // Speed of sound wave divided by 2 (go and back)
-  Serial.print("Distance in cm: ");
-  Serial.println(distance);
-  return distance;
-}
-
-
 int electricMessure() {
   electricValue = analogRead(electricPin);
-  int elecPercent = map(electricValue, 4095, 1000, 0, 100);
+  elecPercent = map(electricValue, 4095, 1000, 0, 100);
   Serial.print("Moisture % (elec): ");
   Serial.println(elecPercent);
   return elecPercent;
