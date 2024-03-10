@@ -1,3 +1,5 @@
+#include "ultra_settings.h"
+
 #define echoPin 17
 #define trigPin 16
 
