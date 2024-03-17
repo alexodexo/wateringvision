@@ -66,7 +66,6 @@ void setup() {
     while (1)
       ;
   }
-  
 }
 
 void loop() {
@@ -74,46 +73,52 @@ void loop() {
     reconnect();
   }
   client.loop();
-  updateDisplayData();
-
 
   if (timerAktiv) {
     if (millis() - startZeit >= verzogerungsDauer * 1000) {  // VerzögerungsDauer in Millisekunden umrechnen
-      digitalWrite(relaisPin, HIGH);                         // Schalte Pin 27 wieder HIGH -->> Ventil zu
-      timerAktiv = false;                                    // Stoppe den Timer
-      Serial.println("Timer abgelaufen, Pin 27 wurde HIGH gesetzt.");
-      client.publish(feedback_topic, "Ventil wurde erfolgreich geschlossen");
+      closeValve();
     }
+  } else {
+    updateDisplayData();
   }
 }
 
+void closeValve() {
+  digitalWrite(relaisPin, HIGH);  // Schalte Pin 27 wieder HIGH -->> Ventil zu
+  timerAktiv = false;             // Stoppe den Timer
+  Serial.println("Timer abgelaufen, Pin 27 wurde HIGH gesetzt.");
+
+  lcd.setCursor(0, 1);
+  lcd.print("   geschlossen   ");
+
+  client.publish(feedback_topic, "Ventil wurde erfolgreich geschlossen");
+  delay(700);
+}
 
 void updateDisplayData() {
   static unsigned long lastUpdate = 0;
   unsigned long currentMillis = millis();
-  
-  if (currentMillis - lastUpdate >= 2000) { // Prüfe, ob 2 Sekunden vergangen sind
-    lastUpdate = currentMillis; // Aktualisiere die letzte Aktualisierungszeit
 
-    messure(); // Aktualisiere Messwerte
+  if (currentMillis - lastUpdate >= 2000) {  // Prüfe, ob 2 Sekunden vergangen sind
+    lastUpdate = currentMillis;              // Aktualisiere die letzte Aktualisierungszeit
 
+    messure();  // Aktualisiere Messwerte
+    lcd.clear();
     // Aktualisiere die obere Zeile mit Bodenfeuchtigkeit
-    char topLine[11]; // Char-Array für "Soil: 100%"
+    char topLine[11];  // Char-Array für "Soil: 100%"
     snprintf(topLine, sizeof(topLine), "Soil: %d%%", elecPercent);
-    lcd.setCursor(0, 0); // Setze den Cursor auf den Anfang der ersten Zeile
-    lcd.print(topLine); // Drucke die Bodenfeuchtigkeit
+    lcd.setCursor(0, 0);  // Setze den Cursor auf den Anfang der ersten Zeile
+    lcd.print(topLine);   // Drucke die Bodenfeuchtigkeit
 
-    printHHMM(); // Aktualisiere die Zeit am Ende der ersten Zeile, die Funktion kümmert sich um die korrekte Position
+    printHHMM();  // Aktualisiere die Zeit am Ende der ersten Zeile, die Funktion kümmert sich um die korrekte Position
 
     // Aktualisiere die untere Zeile mit Temperatur, Luftdruck und Luftfeuchtigkeit
-    char bottomLine[17]; // Char-Array für die untere Zeile
+    char bottomLine[17];  // Char-Array für die untere Zeile
     snprintf(bottomLine, sizeof(bottomLine), "%dC %dhPa %d%%", temperature, pressure, humidity);
-    lcd.setCursor(0, 1); // Setze den Cursor auf den Anfang der zweiten Zeile
-    lcd.print(bottomLine); // Drucke die gesammelten Messwerte
+    lcd.setCursor(0, 1);    // Setze den Cursor auf den Anfang der zweiten Zeile
+    lcd.print(bottomLine);  // Drucke die gesammelten Messwerte
   }
 }
-
-
 
 
 
@@ -140,10 +145,7 @@ void callback(char* topic, byte* message, unsigned int length) {
   } else if (strcmp(topic, request_topic) == 0) {
     handleCallSensor();
   } else if (strcmp(topic, notaus_topic) == 0) {
-    digitalWrite(relaisPin, HIGH);  // Schalte Pin 27 wieder HIGH -->> Ventil zu
-    Serial.println("Notaus für Ventil angefordert, Ventil wurde geschlossen");
-    client.publish(notaus_topic, "Ventil wurde erfolgreich geschlossen");
-
+    closeValve();
   } else {
     Serial.print("Unbekanntes Topic: ");
     Serial.println(topic);
@@ -182,6 +184,14 @@ void handleControlValve(String message) {
     digitalWrite(relaisPin, LOW);      // Schalte Pin 27 LOW
     startZeit = millis();              // Speichere den Startzeitpunkt
     timerAktiv = true;                 // Starte den Timer
+
+    lcd.setCursor(0, 0);
+    lcd.print(" Ventil-Status: ");
+    lcd.setCursor(0, 1);
+    lcd.print("open for ");
+    lcd.setCursor(12, 1);
+    lcd.print(messageValue);
+
     Serial.println("Pin 27 wurde LOW gesetzt. Timer gestartet.");
     client.publish(feedback_topic, "Ventil wurde erfolgreich geöffnet");
 
