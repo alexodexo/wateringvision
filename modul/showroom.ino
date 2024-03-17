@@ -1,32 +1,32 @@
-#include "secrets.h"
-#include <WiFi.h>
+#include "showroom_config.h"
 
+#include <WiFi.h>
 WiFiClient espClient;
 
+#include "time.h"
+const long gmtOffset_sec = 3600;   // GMT +1: 3600 Sekunden Offset
+const int daylightOffset_sec = 0;  // Lass die Anpassung automatisch erfolgen
+struct tm timeinfo;                // Deklariere timeinfo als globale Variable
+String hhmm;
+
 #include <PubSubClient.h>
-const char* mqtt_server = "wateringvision.de";
-const int mqtt_port = 1883;
 PubSubClient client(espClient);
 
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-#define echoPin 17
-#define trigPin 16
-long duration;  //of sound wave travel
-int distance;   //for the distance measurement
+long duration;  //Ultraschall, of sound wave travel
+int distance;   //Ultraschall, for the distance measurement
 
-#define capacitivePin 35
 int capacitiveValue;
+int capacitivePercent;
 
-#define electricPin 34
 int electricValue;
+int elecPercent;
 
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
-#define SDA_PIN 0
-#define SCL_PIN 4
 Adafruit_BME280 bme;  // Erstelle ein BME280 Objekt
 int temperature;
 int pressure;
@@ -34,13 +34,17 @@ int humidity;
 
 #include <ArduinoJson.h>
 #include <Arduino.h>
-#define relaisPin 27
+
 unsigned long startZeit = 0;  // Speichert den Startzeitpunkt der Verzögerung
 int verzogerungsDauer = 0;    // Speichert die Dauer der Verzögerung in Sekunden
 bool timerAktiv = false;      // Flag, um zu überprüfen, ob der Timer läuft
 
 
 void setup() {
+  pinMode(trigPin, OUTPUT);
+  pinMode(relaisPin, OUTPUT);
+  digitalWrite(relaisPin, HIGH);
+
   Serial.begin(115200);
   Wire.begin(SDA_PIN, SCL_PIN);
   lcd.init();
@@ -50,20 +54,19 @@ void setup() {
   lcd.setCursor(0, 1);
   lcd.print("Modul is booting");
   delay(1000);
-  
-  setup_wifi();
-  pinMode(trigPin, OUTPUT);
 
-  pinMode(relaisPin, OUTPUT);
-  digitalWrite(relaisPin, HIGH);
+  setup_wifi();
+  initializeTime();
 
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
 
   if (!bme.begin(0x76)) {  // Initialisiere den BME280 Sensor
     Serial.println("Could not find a valid BME280 sensor, check wiring!");
-    while (1);
+    while (1)
+      ;
   }
+  
 }
 
 void loop() {
@@ -71,18 +74,46 @@ void loop() {
     reconnect();
   }
   client.loop();
+  updateDisplayData();
 
 
   if (timerAktiv) {
     if (millis() - startZeit >= verzogerungsDauer * 1000) {  // VerzögerungsDauer in Millisekunden umrechnen
-      digitalWrite(27, HIGH);                                // Schalte Pin 27 wieder HIGH
+      digitalWrite(relaisPin, HIGH);                         // Schalte Pin 27 wieder HIGH -->> Ventil zu
       timerAktiv = false;                                    // Stoppe den Timer
       Serial.println("Timer abgelaufen, Pin 27 wurde HIGH gesetzt.");
-      client.publish("/feedback/berlin", "Ventil wurde erfolgreich geöffnet");
-
+      client.publish(feedback_topic, "Ventil wurde erfolgreich geschlossen");
     }
   }
 }
+
+
+void updateDisplayData() {
+  static unsigned long lastUpdate = 0;
+  unsigned long currentMillis = millis();
+  
+  if (currentMillis - lastUpdate >= 2000) { // Prüfe, ob 2 Sekunden vergangen sind
+    lastUpdate = currentMillis; // Aktualisiere die letzte Aktualisierungszeit
+
+    messure(); // Aktualisiere Messwerte
+
+    // Aktualisiere die obere Zeile mit Bodenfeuchtigkeit
+    char topLine[11]; // Char-Array für "Soil: 100%"
+    snprintf(topLine, sizeof(topLine), "Soil: %d%%", elecPercent);
+    lcd.setCursor(0, 0); // Setze den Cursor auf den Anfang der ersten Zeile
+    lcd.print(topLine); // Drucke die Bodenfeuchtigkeit
+
+    printHHMM(); // Aktualisiere die Zeit am Ende der ersten Zeile, die Funktion kümmert sich um die korrekte Position
+
+    // Aktualisiere die untere Zeile mit Temperatur, Luftdruck und Luftfeuchtigkeit
+    char bottomLine[17]; // Char-Array für die untere Zeile
+    snprintf(bottomLine, sizeof(bottomLine), "%dC %dhPa %d%%", temperature, pressure, humidity);
+    lcd.setCursor(0, 1); // Setze den Cursor auf den Anfang der zweiten Zeile
+    lcd.print(bottomLine); // Drucke die gesammelten Messwerte
+  }
+}
+
+
 
 
 
@@ -104,17 +135,24 @@ void callback(char* topic, byte* message, unsigned int length) {
   Serial.println(msg);
 
 
-  if (strcmp(topic, "/operateValve/berlin") == 0) {
+  if (strcmp(topic, valve_topic) == 0) {
     handleControlValve(msg);
-  } else if (strcmp(topic, "/requestSensor/berlin") == 0) {
+  } else if (strcmp(topic, request_topic) == 0) {
     handleCallSensor();
+  } else if (strcmp(topic, notaus_topic) == 0) {
+    digitalWrite(relaisPin, HIGH);  // Schalte Pin 27 wieder HIGH -->> Ventil zu
+    Serial.println("Notaus für Ventil angefordert, Ventil wurde geschlossen");
+    client.publish(notaus_topic, "Ventil wurde erfolgreich geschlossen");
+
   } else {
     Serial.print("Unbekanntes Topic: ");
     Serial.println(topic);
-    client.publish("/feedback/berlin", "Ungültiger Befehl übermittelt.");
-
+    client.publish(feedback_topic, "Ungültiger Befehl übermittelt.");
   }
 }
+
+
+
 
 void handleCallSensor() {
   messure();
@@ -123,15 +161,13 @@ void handleCallSensor() {
   createSensorDataString(distance, electricValue, capacitiveValue, temperature, pressure, humidity, sensorDataString, sizeof(sensorDataString));
   Serial.println(sensorDataString);
 
-  // Veröffentliche die Nachricht auf "berlin/setSensor"
-  if (client.publish("/responseSensor/berlin", sensorDataString)) {
+  if (client.publish(response_topic, sensorDataString)) {
     Serial.println("Sensorwert erfolgreich veröffentlicht!");
-    client.publish("/feedback/berlin", "Sensordaten erfolgreich veröffentlicht");
+    client.publish(feedback_topic, "Sensordaten erfolgreich veröffentlicht");
 
   } else {
     Serial.println("Fehler beim Veröffentlichen des Sensorwerts.");
-    client.publish("/feedback/berlin", "Fehler beim Übermitteln der Sensordaten");
-
+    client.publish(feedback_topic, "Fehler beim Übermitteln der Sensordaten");
   }
 }
 
@@ -143,20 +179,19 @@ void handleControlValve(String message) {
     Serial.println(messageValue);
 
     verzogerungsDauer = messageValue;  // Speichere die Verzögerungsdauer
-    digitalWrite(27, LOW);             // Schalte Pin 27 LOW
+    digitalWrite(relaisPin, LOW);      // Schalte Pin 27 LOW
     startZeit = millis();              // Speichere den Startzeitpunkt
     timerAktiv = true;                 // Starte den Timer
     Serial.println("Pin 27 wurde LOW gesetzt. Timer gestartet.");
-    client.publish("/feedback/berlin", "Ventil wurde erfolgreich geöffnet");
+    client.publish(feedback_topic, "Ventil wurde erfolgreich geöffnet");
 
 
   } else {
     // Der Wert liegt außerhalb des zulässigen Bereichs oder die Konvertierung war nicht erfolgreich
     Serial.println("Empfangener Wert ist ungültig.");
-    client.publish("/feedback/berlin", "Ungültiger Bewässerungsintervall");
+    client.publish(feedback_topic, "Ungültiger Bewässerungsintervall");
   }
 }
-
 
 void messure() {
   bmeMesure();
@@ -164,7 +199,6 @@ void messure() {
   electricMessure();
   capacitiveMesure();
 }
-
 
 void createSensorDataString(int ultra, int elec, int cap, int temp, int pres, int humi, char* dataString, int maxLength) {
   snprintf(dataString, maxLength, "ultra:%d;elec:%d;cap:%d;temp:%d;pres:%d;humi:%d", ultra, elec, cap, temp, pres, humi);
@@ -183,8 +217,10 @@ void reconnect() {
       lcd.setCursor(0, 1);
       lcd.print("   connected    ");
       Serial.println("Connected to MQTT broker");
-      client.subscribe("/operateValve/berlin", 1);    
-      client.subscribe("/requestSensor/berlin", 1); 
+      client.subscribe(valve_topic, 1);
+      client.subscribe(request_topic, 1);
+      client.subscribe(notaus_topic, 1);
+
     } else {
       Serial.print("Failed, rc=");
       int clientState = client.state();
@@ -198,8 +234,6 @@ void reconnect() {
     }
   }
 }
-
-
 
 void setup_wifi() {
   delay(10);
@@ -222,6 +256,48 @@ void setup_wifi() {
   Serial.println("WiFi connected");
   delay(1000);
 }
+
+void initializeTime() {
+  // Konfiguriere Zeitserver und Zeitzone
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  lcd.setCursor(0, 0);
+  lcd.print("   Timeserver   ");
+  lcd.setCursor(0, 1);
+  lcd.print(" not connected  ");
+
+
+  Serial.println("Warte auf Zeit synchronisation...");
+  while (!getLocalTime(&timeinfo)) {
+    Serial.print(".");
+    delay(1000);
+  }
+  Serial.print("Zeit synchronisiert: ");
+  Serial.println(getHHMM());
+
+
+  lcd.setCursor(0, 1);
+  lcd.print("   connected    ");
+}
+
+String getHHMM() {
+  if (!getLocalTime(&timeinfo)) {
+    return "Fehler";  // Falls keine Zeit abgerufen werden kann
+  }
+  char timeString[6];  // HH:MM + Null-Terminator
+  strftime(timeString, sizeof(timeString), "%H:%M", &timeinfo);
+  return String(timeString);  // Konvertiere den char-Array in ein String-Objekt und gebe es zurück
+}
+
+void printHHMM() {
+  Serial.println("Zeit wird auf dem Display aktualisiert");
+  hhmm = getHHMM();
+  lcd.setCursor(11, 0);
+  lcd.print(hhmm);
+  Serial.print("Aktuelle Zeit: ");
+  Serial.println(hhmm);
+}
+
+
 
 void bmeMesure() {
   Serial.print("Temperature = ");
@@ -270,7 +346,8 @@ int electricMessure() {
 
 int capacitiveMesure() {
   capacitiveValue = analogRead(capacitivePin);
-  Serial.print("Capacitive Value: ");
-  Serial.println(capacitiveValue);
-  return capacitiveValue;
+  capacitivePercent = map(capacitiveValue, 3000, 2100, 0, 100);
+  Serial.print("Moisture % (cap): ");
+  Serial.println(capacitivePercent);
+  return capacitivePercent;
 }
