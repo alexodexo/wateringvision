@@ -1,2 +1,0 @@
-0 * * * * /usr/bin/node /home/alexpi/weather/brightsky_into_json.js >> /home/alexpi/log/brightsky_into_json.log 2>&1
-10 * * * * /usr/bin/node /home/alexpi/weather/JSON_into_DB.js >> /home/alexpi/log/JSON_into_DB.log 2>&1
